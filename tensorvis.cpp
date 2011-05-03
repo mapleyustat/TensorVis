@@ -88,11 +88,10 @@ namespace TensorVis {
     const float PHI_STEP = 0.05;
     const float TENSOR_RADIUS = .05;
 
-    const float TWO_PI = 2*M_PI;
     const unsigned long NUM_THETA =
-      static_cast<unsigned long>(M_PI / THETA_STEP);
+      static_cast<unsigned long>(M_PI / THETA_STEP + 0.5) + 1;
     const unsigned long NUM_PHI =
-      static_cast<unsigned long>(2*M_PI / PHI_STEP);
+      static_cast<unsigned long>(2*M_PI / PHI_STEP + 0.5) + 1;
     const unsigned long NUM_POINTS = NUM_THETA * NUM_PHI;
 
     // Set up caches
@@ -110,20 +109,28 @@ namespace TensorVis {
 
     // Populate caches
     /// @todo exploit symmetry?
-    for (float theta = 0.0; theta <= M_PI; theta += THETA_STEP) {
+    const float thetaMax = M_PI + 0.5 * THETA_STEP;
+    for (float theta = 0.0; theta < thetaMax; theta += THETA_STEP) {
       sinThetas.push_back(sin(theta));
       cosThetas.push_back(cos(theta));
     }
-    for (float phi = 0.0; phi <= TWO_PI; phi += PHI_STEP) {
+    const float phiMax = 2.0 * M_PI + 0.5 * PHI_STEP;
+    for (float phi = 0.0; phi < phiMax; phi += PHI_STEP) {
       sinPhis.push_back(sin(phi));
       cosPhis.push_back(cos(phi));
     }
 
-    // ensure that the first and last entries of the phi lists are the
+    // ensure that the first and last entries of the lists are the
     // same (sin and cos can behave strangely on different
     // implementations)
-    sinPhis.first() = sinPhis.last();
-    cosPhis.first() = cosPhis.last();
+    sinThetas.last() = sinThetas.first();
+    cosThetas.last() = -cosThetas.first();
+    sinPhis.last() = sinPhis.first();
+    cosPhis.last() = cosPhis.first();
+
+    // Check that all spherical coordinates were cached
+    Q_ASSERT(sinPhis.size() == NUM_PHI);
+    Q_ASSERT(sinThetas.size() == NUM_THETA);
 
     unsigned long pointInd = 0;
     Eigen::Vector3f tmpVec;
@@ -147,6 +154,9 @@ namespace TensorVis {
         ++pointInd;
       }
     }
+
+    // Check that all points were generated
+    Q_ASSERT(tensorPoints.size() == NUM_POINTS);
 
     // Generate mesh -- expects triplets of vertices of clockwise
     // wound triangles
@@ -179,6 +189,7 @@ namespace TensorVis {
     const Eigen::Vector3f *n1, *n2, *n3, *n4;
     const float *v1, *v2, *v3, *v4;
     unsigned long i1, i2, i3, i4;
+    bool onlyRenderOneTriangle;
 
     // When indicies are above this threshold they must be rendered
     // differently:
@@ -186,14 +197,17 @@ namespace TensorVis {
 
     // Build the mesh:
     for (unsigned long ind = 0; ind < NUM_POINTS; ++ind) {
+      // Initialize
+      onlyRenderOneTriangle = false;
+
       // Assign indices
       i1 = ind;
       i2 = ind + NUM_PHI;
       i3 = ind + 1;
       i4 = ind + NUM_PHI + 1;
 
-      // If we are on a bondary, subtract NUM_PHI from indices 3 and 4.
-      if (ind != 0 && (ind % NUM_PHI == 0)) {
+      // If we are on a boundary, subtract NUM_PHI from indices 3 and 4.
+      if ((ind + 1) % NUM_PHI == 0) {
         i3 -= NUM_PHI;
         i4 -= NUM_PHI;
       }
@@ -202,11 +216,14 @@ namespace TensorVis {
       // bounds. Just set i2 and i4 to NUM_POINTS-1, since the last
       // row of points all have the same coords.
       if (ind >= autoGenMeshLimit) {
+        // For this last loop, we'll only render a single triangle at a time
+        onlyRenderOneTriangle = true;
         // Skip the last few points since there's not enough data to
         // draw the quad.
         if (ind >= NUM_POINTS - 4) break;
         i2 = NUM_POINTS-1;
-        i4 = NUM_POINTS-1;
+        // i4 will not be used -- set to a safe index
+        i4 = 0;
       }
 
       // Assign points
@@ -240,15 +257,17 @@ namespace TensorVis {
         colors.push_back(Color3f(posR, posG, posB));
         colors.push_back(Color3f(posR, posG, posB));
 
-        verts.push_back(*p2);
-        verts.push_back(*p4);
-        verts.push_back(*p3);
-        norms.push_back(*n2);
-        norms.push_back(*n4);
-        norms.push_back(*n3);
-        colors.push_back(Color3f(posR, posG, posB));
-        colors.push_back(Color3f(posR, posG, posB));
-        colors.push_back(Color3f(posR, posG, posB));
+        if (!onlyRenderOneTriangle) {
+          verts.push_back(*p2);
+          verts.push_back(*p4);
+          verts.push_back(*p3);
+          norms.push_back(*n2);
+          norms.push_back(*n4);
+          norms.push_back(*n3);
+          colors.push_back(Color3f(posR, posG, posB));
+          colors.push_back(Color3f(posR, posG, posB));
+          colors.push_back(Color3f(posR, posG, posB));
+        }
       }
       else {
         verts.push_back(*p3);
@@ -261,15 +280,17 @@ namespace TensorVis {
         colors.push_back(Color3f(negR, negG, negB));
         colors.push_back(Color3f(negR, negG, negB));
 
-        verts.push_back(*p3);
-        verts.push_back(*p4);
-        verts.push_back(*p2);
-        norms.push_back(*n3);
-        norms.push_back(*n4);
-        norms.push_back(*n2);
-        colors.push_back(Color3f(negR, negG, negB));
-        colors.push_back(Color3f(negR, negG, negB));
-        colors.push_back(Color3f(negR, negG, negB));
+        if (!onlyRenderOneTriangle) {
+          verts.push_back(*p3);
+          verts.push_back(*p4);
+          verts.push_back(*p2);
+          norms.push_back(*n3);
+          norms.push_back(*n4);
+          norms.push_back(*n2);
+          colors.push_back(Color3f(negR, negG, negB));
+          colors.push_back(Color3f(negR, negG, negB));
+          colors.push_back(Color3f(negR, negG, negB));
+        }
       }
     }
 
