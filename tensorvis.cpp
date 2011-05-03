@@ -149,7 +149,7 @@ namespace TensorVis {
         tmpVec *= TENSOR_RADIUS;
 
         tensorPoints[pointInd] = tmpVec + tensorOrigin;
-        tensorNormals[pointInd] = tmpVec - tensorOrigin;
+        tensorNormals[pointInd] = (tmpVec - tensorOrigin).normalized();
         tensorValue[pointInd] = value;
         ++pointInd;
       }
