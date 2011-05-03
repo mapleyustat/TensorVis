@@ -141,8 +141,6 @@ namespace TensorVis {
         tmpVec *= value;
         tmpVec *= TENSOR_RADIUS;
 
-        // pointInd will overflow to 0 on first iteration (prefix
-        // increment is faster)
         tensorPoints[pointInd] = tmpVec + tensorOrigin;
         tensorNormals[pointInd] = tmpVec - tensorOrigin;
         tensorValue[pointInd] = value;
