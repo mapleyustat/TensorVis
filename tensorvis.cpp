@@ -15,6 +15,8 @@
 
 #include "tensorvis.h"
 
+#include "ui/tensorviswidget.h"
+
 #include <avogadro/color3f.h>
 #include <avogadro/cube.h>
 #include <avogadro/glwidget.h>
@@ -68,21 +70,29 @@ namespace TensorVis {
   QUndoCommand * TensorVis::performAction(QAction *action,
                                           GLWidget *widget)
   {
-    QTime startTime (QTime::currentTime());
-    /// @todo these should be set by user eventually:
-    Eigen::Matrix3f tensor;
-    tensor <<
-      88.921500, 46.045900, -0.777100,
-      17.744000, 18.222400, -0.248500,
-      -0.900100, -0.432300, -81.653700;
-    const Eigen::Vector3f tensorOrigin (0.0, 0.0, 0.0);
+    if (!m_dock) {
+      qDebug() << "Dock widget not yet created?";
+      return 0;
+    }
+    m_dock->show();
+    return 0;
+  }
 
-    const float posR = 0.2;
-    const float posG = 0.2;
-    const float posB = 0.6;
-    const float negR = 0.6;
-    const float negG = 0.2;
-    const float negB = 0.2;
+  void TensorVis::generateMesh()
+  {
+    if (!m_dock) {
+      qDebug() << "Dock widget not yet created?";
+      return;
+    }
+
+    QTime startTime (QTime::currentTime());
+
+    const Eigen::Matrix3f tensor (m_dock->tensor());
+    const Eigen::Vector3f tensorOrigin (m_dock->origin());
+
+    const Color3f posColor (m_dock->posColor());
+    const Color3f negColor (m_dock->negColor());
+
     /// @todo Predefine resolutions
     const float THETA_STEP = 0.05;
     const float PHI_STEP = 0.05;
@@ -253,9 +263,9 @@ namespace TensorVis {
         norms.push_back(*n2);
         norms.push_back(*n3);
         /// @todo Scale colors?
-        colors.push_back(Color3f(posR, posG, posB));
-        colors.push_back(Color3f(posR, posG, posB));
-        colors.push_back(Color3f(posR, posG, posB));
+        colors.push_back(posColor);
+        colors.push_back(posColor);
+        colors.push_back(posColor);
 
         if (!onlyRenderOneTriangle) {
           verts.push_back(*p2);
@@ -264,9 +274,9 @@ namespace TensorVis {
           norms.push_back(*n2);
           norms.push_back(*n4);
           norms.push_back(*n3);
-          colors.push_back(Color3f(posR, posG, posB));
-          colors.push_back(Color3f(posR, posG, posB));
-          colors.push_back(Color3f(posR, posG, posB));
+          colors.push_back(posColor);
+          colors.push_back(posColor);
+          colors.push_back(posColor);
         }
       }
       else {
@@ -276,9 +286,9 @@ namespace TensorVis {
         norms.push_back(*n3);
         norms.push_back(*n2);
         norms.push_back(*n1);
-        colors.push_back(Color3f(negR, negG, negB));
-        colors.push_back(Color3f(negR, negG, negB));
-        colors.push_back(Color3f(negR, negG, negB));
+        colors.push_back(negColor);
+        colors.push_back(negColor);
+        colors.push_back(negColor);
 
         if (!onlyRenderOneTriangle) {
           verts.push_back(*p3);
@@ -287,9 +297,9 @@ namespace TensorVis {
           norms.push_back(*n3);
           norms.push_back(*n4);
           norms.push_back(*n2);
-          colors.push_back(Color3f(negR, negG, negB));
-          colors.push_back(Color3f(negR, negG, negB));
-          colors.push_back(Color3f(negR, negG, negB));
+          colors.push_back(negColor);
+          colors.push_back(negColor);
+          colors.push_back(negColor);
         }
       }
     }
@@ -319,7 +329,7 @@ namespace TensorVis {
     cube->setData(junkDVec);
     mesh->setCube(cube->id());
 
-    return 0;
+    return;
   }
 
   void TensorVis::setMolecule(Molecule *molecule)
@@ -329,7 +339,13 @@ namespace TensorVis {
 
   QDockWidget * TensorVis::dockWidget()
   {
-    return 0;
+    if (!m_dock) {
+      m_dock = new TensorVisWidget ();
+      connect(m_dock, SIGNAL(generateMesh()),
+              this, SLOT(generateMesh()));
+    }
+    m_dock->hide();
+    return m_dock;
   }
 
 }

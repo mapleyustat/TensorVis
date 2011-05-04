@@ -20,12 +20,12 @@ include_directories(
 # Create a list of all source files
 set( tensorvis_SRCS
      tensorvis.cpp
-     #dock.cpp
+     ui/tensorviswidget.cpp
 )
 
 # Create a list of all ui files
 set( tensorvis_UIS
-     #dock.ui
+     ui/tensorviswidget.ui
 )
 
 # Create the extension

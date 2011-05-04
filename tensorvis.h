@@ -27,6 +27,7 @@
 using Avogadro::Plugin;
 
 namespace TensorVis {
+  class TensorVisWidget;
 
   class TensorVis : public Avogadro::Extension
   {
@@ -46,6 +47,9 @@ namespace TensorVis {
     virtual void setMolecule(Avogadro::Molecule *molecule);
     virtual QDockWidget * dockWidget();
 
+  protected slots:
+    void generateMesh();
+
   private:
     // "point" is on a sphere formed by iterating over phi and theta
     // in spherical coordinates:
@@ -57,8 +61,7 @@ namespace TensorVis {
 
     QList<QAction *> m_actions;
     Avogadro::Molecule *m_molecule;
-    QDockWidget *m_dock;
-
+    TensorVisWidget *m_dock;
   };
 
   // Plugin factory setup
