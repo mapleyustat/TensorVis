@@ -47,17 +47,29 @@ namespace TensorVis {
     virtual void setMolecule(Avogadro::Molecule *molecule);
     virtual QDockWidget * dockWidget();
 
+
+    enum Resolution {
+      Poor = 0,
+      Low,
+      Medium,
+      High,
+      Ultra
+    };
+
+  public slots:
+
   protected slots:
     void generateMesh();
+    void clearMesh();
 
-  private:
+  protected:
     // "point" is on a sphere formed by iterating over phi and theta
     // in spherical coordinates:
     // x = r * sin(theta)*cos(phi)
     // y = r * sin(theta)*sin(phi)
     // z = r * cos(theta)
-    static inline float calculateTensorValue(const Eigen::Vector3f &point,
-                                             const Eigen::Matrix3f &tensor);
+    static float calculateTensorValue(const Eigen::Vector3f &point,
+                                      const Eigen::Matrix3f &tensor);
 
     QList<QAction *> m_actions;
     Avogadro::Molecule *m_molecule;

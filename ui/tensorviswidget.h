@@ -18,6 +18,8 @@
 #ifndef TENSORVISWIDGET_H
 #define TENSORVISWIDGET_H
 
+#include "../tensorvis.h"
+
 #include <avogadro/color3f.h>
 
 #include <Eigen/Core>
@@ -44,26 +46,25 @@ namespace TensorVis
     Avogadro::Color3f posColor();
     Avogadro::Color3f negColor();
 
+    const TensorVis::Resolution resolution() {
+      return static_cast<TensorVis::Resolution>
+          (this->ui.combo_resolution->currentIndex());}
+
+    const double scale() {return this->ui.spin_scale->value();}
+
   signals:
+    void clearMesh();
     void generateMesh();
-    void invalidInput();
-    void validInput();
 
   public slots:
     void refreshGui();
 
   protected slots:
-    void validateEditor();
-    void markAsInvalid();
-    void markAsValid();
+    void useSelectedAtomAsOrigin();
 
   protected:
     Ui::TensorVisWidget ui;
 
-    Eigen::Matrix3f m_tensor;
-    Eigen::Vector3f m_origin;
-
-    QTextCharFormat m_charFormat;
   };
 
 }

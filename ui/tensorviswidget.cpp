@@ -17,6 +17,12 @@
 
 #include "tensorviswidget.h"
 
+#include <avogadro/glwidget.h>
+#include <avogadro/primitivelist.h>
+#include <avogadro/atom.h>
+
+#include <QtGui/QMessageBox>
+
 #include <stdio.h>
 
 namespace TensorVis
@@ -27,21 +33,19 @@ namespace TensorVis
   {
     ui.setupUi(this);
 
-    connect(ui.push_go, SIGNAL(clicked()),
-            this, SIGNAL(generateMesh()));
-    connect(this, SIGNAL(invalidInput()),
-            this, SLOT(markAsInvalid()));
-    connect(this, SIGNAL(validInput()),
-            this, SLOT(markAsValid()));
+    connect(ui.push_render, SIGNAL(clicked()), SIGNAL(generateMesh()));
+    connect(ui.push_remove, SIGNAL(clicked()), SIGNAL(clearMesh()));
+    connect(ui.push_selectAtom, SIGNAL(clicked()),
+            SLOT(useSelectedAtomAsOrigin()));
 
     ui.edit_tensor->setCurrentFont(QFont("Monospace"));
-    m_charFormat = ui.edit_tensor->textCursor().charFormat();
 
-    m_origin << 0, 0, 0;
-    m_tensor <<
+    Eigen::Matrix3f tensor;
+    tensor <<
       88.921500, 46.045900, -0.777100,
       17.744000, 18.222400, -0.248500,
       -0.900100, -0.432300, -81.653700;
+    this->ui.edit_tensor->setMatrix(tensor.cast<double>());
 
     refreshGui();
   }
@@ -52,108 +56,54 @@ namespace TensorVis
 
   Eigen::Matrix3f TensorVisWidget::tensor()
   {
-    return m_tensor;
+    return this->ui.edit_tensor->matrix().cast<float>();
   }
 
   Eigen::Vector3f TensorVisWidget::origin()
   {
-    return m_origin;
+    return Eigen::Vector3f(this->ui.spin_x->value(),
+                           this->ui.spin_y->value(),
+                           this->ui.spin_z->value());
   }
 
   Avogadro::Color3f TensorVisWidget::posColor()
   {
-    float r=0.2, g=0.2, b=0.7;
-    return Avogadro::Color3f(r,g,b);
+    return Avogadro::Color3f(0.2f, 0.2f, 0.7f);
   }
 
   Avogadro::Color3f TensorVisWidget::negColor()
   {
-    float r=0.7, g=0.2, b=0.2;
-    return Avogadro::Color3f(r,g,b);
+    return Avogadro::Color3f(0.7f, 0.2f, 0.2f);
   }
 
   void TensorVisWidget::refreshGui()
   {
-    char text[256];
-    snprintf(text, 256,
-             "%9.5f %9.5f %9.5f\n"
-             "%9.5f %9.5f %9.5f\n"
-             "%9.5f %9.5f %9.5f\n",
-             m_tensor(0, 0), m_tensor(0, 1), m_tensor(0, 2),
-             m_tensor(1, 0), m_tensor(1, 1), m_tensor(1, 2),
-             m_tensor(2, 0), m_tensor(2, 1), m_tensor(2, 2));
-
-    ui.edit_tensor->blockSignals(true);
-    ui.edit_tensor->setText(text);
-    ui.edit_tensor->blockSignals(false);
-
-    ui.edit_tensor->setCurrentFont(QFont("Monospace"));
+    this->ui.edit_tensor->resetMatrix();
+    this->ui.edit_tensor->setCurrentFont(QFont("Monospace"));
   }
 
-  void TensorVisWidget::validateEditor()
+  void TensorVisWidget::useSelectedAtomAsOrigin()
   {
-    // Clear selection, otherwise there is a crash on Qt 4.7.2.
-    QTextCursor tc = ui.edit_tensor->textCursor();
-    tc.clearSelection();
-    ui.edit_tensor->setTextCursor(tc);
+    Avogadro::GLWidget *gl = Avogadro::GLWidget::current();
+    Avogadro::PrimitiveList atoms =
+        gl->selectedPrimitives().subList(Avogadro::Primitive::AtomType);
 
-    QString text = ui.edit_tensor->document()->toPlainText();
-    QStringList lines = text.split("\n", QString::SkipEmptyParts);
-    if (lines.size() != 3) {
-      emit invalidInput();
+    if (atoms.count() != 1) {
+      QMessageBox::information(gl, "Not so fast...",
+                               "Please select one (and only one) atom to use "
+                               "for the tensor origin.");
       return;
     }
 
-    const QRegExp parseRegExp
-      ("\\s+|,|;|\\||\\[|\\]|\\{|\\}|\\(|\\)|\\&|/|<|>");
+    // Static cast is ok because of the above sublist call
+    Avogadro::Atom *atom = static_cast<Avogadro::Atom*>(atoms.list().first());
 
-    QList<QStringList> stringVecs;
-      for (int row = 0; row < 3; ++row) {
-        stringVecs.append(lines.at(row).simplified()
-                          .split(parseRegExp, QString::SkipEmptyParts));
-        QStringList &stringVec = stringVecs[row];
-        if (stringVec.size() != 3) {
-          emit invalidInput();
-          return;
-        }
-        for (int col = 0; col < 3; ++col) {
-          bool ok;
-          double val = stringVec[col].toDouble(&ok);
-          if (!ok) {
-            emit invalidInput();
-            return;
-          }
-        }
-      }
-
-      emit validInput();
-    }
-
-  void TensorVisWidget::markAsInvalid()
-  {
-    QTextCursor tc (ui.edit_tensor->document());
-    QTextCharFormat redFormat;
-    redFormat.setForeground(QBrush(Qt::red));
-    tc.movePosition(QTextCursor::Start);
-    tc.movePosition(QTextCursor::End,
-                    QTextCursor::KeepAnchor);
-    ui.edit_tensor->blockSignals(true);
-    tc.mergeCharFormat(redFormat);
-    ui.edit_tensor->blockSignals(false);
-    ui.edit_tensor->setCurrentFont(QFont("Monospace"));
+    this->ui.spin_x->setValue(atom->pos()->x());
+    this->ui.spin_y->setValue(atom->pos()->y());
+    this->ui.spin_z->setValue(atom->pos()->z());
   }
 
-  void TensorVisWidget::markAsValid()
-  {
-    QTextCursor tc (ui.edit_tensor->document());
-    tc.movePosition(QTextCursor::Start);
-    tc.movePosition(QTextCursor::End,
-                    QTextCursor::KeepAnchor);
-    ui.edit_tensor->blockSignals(true);
-    tc.setCharFormat(m_charFormat);
-    ui.edit_tensor->blockSignals(false);
-    ui.edit_tensor->setCurrentFont(QFont("Monospace"));
-  }
+
 }
 
 #include "tensorviswidget.moc"

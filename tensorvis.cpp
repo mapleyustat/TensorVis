@@ -61,8 +61,8 @@ namespace TensorVis {
   // x = r * sin(theta)*cos(phi)
   // y = r * sin(theta)*sin(phi)
   // z = r * cos(theta)
-  float TensorVis::calculateTensorValue(const Eigen::Vector3f &point,
-                                        const Eigen::Matrix3f &tensor)
+  inline float TensorVis::calculateTensorValue(const Eigen::Vector3f &point,
+                                               const Eigen::Matrix3f &tensor)
   {
     return (point.transpose() * tensor).dot(point);
   }
@@ -93,10 +93,28 @@ namespace TensorVis {
     const Color3f posColor (m_dock->posColor());
     const Color3f negColor (m_dock->negColor());
 
-    /// @todo Predefine resolutions
-    const float THETA_STEP = 0.05;
-    const float PHI_STEP = 0.05;
-    const float TENSOR_RADIUS = .05;
+    float THETA_STEP, PHI_STEP;
+    switch(this->m_dock->resolution())
+    {
+    case Poor:
+      THETA_STEP = PHI_STEP = 0.50;
+      break;
+    default:
+    case Low:
+      THETA_STEP = PHI_STEP = 0.25;
+      break;
+    case Medium:
+      THETA_STEP = PHI_STEP = 0.10;
+      break;
+    case High:
+      THETA_STEP = PHI_STEP = 0.05;
+      break;
+    case Ultra:
+      THETA_STEP = PHI_STEP = 0.01;
+      break;
+    }
+
+    const float TENSOR_RADIUS = this->m_dock->scale();
 
     const unsigned long NUM_THETA =
       static_cast<unsigned long>(M_PI / THETA_STEP + 0.5) + 1;
@@ -309,7 +327,19 @@ namespace TensorVis {
              << "Time elapsed (s):"
              << startTime.msecsTo(QTime::currentTime()) / 1000.0;
 
-    Mesh *mesh = m_molecule->addMesh();
+    // Look for existing Tensor mesh in molecule
+    QList<Mesh*> meshes = this->m_molecule->meshes();
+    Mesh *mesh = NULL;
+    for (QList<Mesh*>::const_iterator it = meshes.constBegin(),
+         it_end = meshes.constEnd(); it != it_end; ++it) {
+      if ((*it)->name().startsWith("Tensor")) {
+        mesh = *it;
+        break;
+      }
+    }
+    if (mesh == NULL)
+      mesh = m_molecule->addMesh();
+
     mesh->setVertices(verts);
     mesh->setNormals(norms);
     mesh->setColors(colors);
@@ -323,13 +353,32 @@ namespace TensorVis {
 
     // Work around a bug in surfaceengine: All meshes must have cubes
     // or that engine can crash.
-    Cube *cube = m_molecule->addCube();
-    cube->setLimits(Eigen::Vector3d(0,0,0), Eigen::Vector3i(1,1,1), 1);
-    std::vector<double> junkDVec (1);
-    cube->setData(junkDVec);
-    mesh->setCube(cube->id());
+    if (!mesh->cube()) {
+      Cube *cube = m_molecule->addCube();
+      cube->setLimits(Eigen::Vector3d(0,0,0), Eigen::Vector3i(1,1,1), 1);
+      std::vector<double> junkDVec (1);
+      cube->setData(junkDVec);
+      mesh->setCube(cube->id());
+    }
 
-    return;
+    this->m_molecule->update();
+  }
+
+  void TensorVis::clearMesh()
+  {
+    // Look for existing Tensor mesh in molecule
+    QList<Mesh*> meshes = this->m_molecule->meshes();
+    Mesh *mesh = NULL;
+    for (QList<Mesh*>::const_iterator it = meshes.constBegin(),
+         it_end = meshes.constEnd(); it != it_end; ++it) {
+      if ((*it)->name().startsWith("Tensor")) {
+        mesh = *it;
+        break;
+      }
+    }
+    if (mesh != NULL)
+      this->m_molecule->removeMesh(mesh);
+    this->m_molecule->update();
   }
 
   void TensorVis::setMolecule(Molecule *molecule)
@@ -341,8 +390,8 @@ namespace TensorVis {
   {
     if (!m_dock) {
       m_dock = new TensorVisWidget ();
-      connect(m_dock, SIGNAL(generateMesh()),
-              this, SLOT(generateMesh()));
+      connect(m_dock, SIGNAL(generateMesh()), SLOT(generateMesh()));
+      connect(m_dock, SIGNAL(clearMesh()), SLOT(clearMesh()));
     }
     m_dock->hide();
     return m_dock;
