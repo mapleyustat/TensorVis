@@ -29,6 +29,8 @@
 #include <QtGui/QAction>
 #include <QtGui/QDockWidget>
 
+#include <Eigen/Geometry>
+
 using namespace Avogadro;
 
 namespace TensorVis {
@@ -132,7 +134,6 @@ namespace TensorVis {
     QVector<float> cosThetas;
     cosThetas.reserve(NUM_THETA);
     QVector<Eigen::Vector3f> tensorPoints (NUM_POINTS);
-    QVector<Eigen::Vector3f> tensorNormals (NUM_POINTS);
     QVector<float> tensorValue (NUM_POINTS);
 
     // Populate caches
@@ -177,7 +178,6 @@ namespace TensorVis {
         tmpVec *= TENSOR_RADIUS;
 
         tensorPoints[pointInd] = tmpVec + tensorOrigin;
-        tensorNormals[pointInd] = (tmpVec - tensorOrigin).normalized();
         tensorValue[pointInd] = value;
         ++pointInd;
       }
@@ -213,9 +213,15 @@ namespace TensorVis {
     std::vector<Color3f> colors;
     // @todo reserve appropriate amount of space
 
+    // Points:
     const Eigen::Vector3f *p1, *p2, *p3, *p4;
-    const Eigen::Vector3f *n1, *n2, *n3, *n4;
+    // Normals:
+    Eigen::Vector3f n1, n2, n3, n4;
+    // Temp vecs used in normal calculations:
+    Eigen::Vector3f tv12, tv13, tv24, tv34;
+    // Values:
     const float *v1, *v2, *v3, *v4;
+    // Indices:
     unsigned long i1, i2, i3, i4;
     bool onlyRenderOneTriangle;
 
@@ -261,10 +267,14 @@ namespace TensorVis {
       p4 = &tensorPoints[i4];
 
       // Assign normals
-      n1 = &tensorNormals[i1];
-      n2 = &tensorNormals[i2];
-      n3 = &tensorNormals[i3];
-      n4 = &tensorNormals[i4];
+      tv12 = *p1 - *p2;
+      tv13 = *p1 - *p3;
+      tv24 = *p2 - *p4;
+      tv34 = *p3 - *p4;
+      n1 = tv13.cross(tv12).normalized();
+      n2 = tv24.cross(tv12).normalized();
+      n3 = tv13.cross(tv34).normalized();
+      n4 = tv24.cross(tv34).normalized();
 
       // Assign values
       v1 = &tensorValue[i1];
@@ -272,14 +282,14 @@ namespace TensorVis {
       v3 = &tensorValue[i3];
       v4 = &tensorValue[i4];
 
-      // If the normal shared vertex is negative, reverse the winding:
+      // If the shared vertex is negative, reverse the winding:
       if (*v2 >= 0 && *v3 >= 0) {
         verts.push_back(*p1);
         verts.push_back(*p2);
         verts.push_back(*p3);
-        norms.push_back(*n1);
-        norms.push_back(*n2);
-        norms.push_back(*n3);
+        norms.push_back(n1);
+        norms.push_back(n2);
+        norms.push_back(n3);
         /// @todo Scale colors?
         colors.push_back(posColor);
         colors.push_back(posColor);
@@ -289,9 +299,9 @@ namespace TensorVis {
           verts.push_back(*p2);
           verts.push_back(*p4);
           verts.push_back(*p3);
-          norms.push_back(*n2);
-          norms.push_back(*n4);
-          norms.push_back(*n3);
+          norms.push_back(n2);
+          norms.push_back(n4);
+          norms.push_back(n3);
           colors.push_back(posColor);
           colors.push_back(posColor);
           colors.push_back(posColor);
@@ -301,9 +311,9 @@ namespace TensorVis {
         verts.push_back(*p3);
         verts.push_back(*p2);
         verts.push_back(*p1);
-        norms.push_back(*n3);
-        norms.push_back(*n2);
-        norms.push_back(*n1);
+        norms.push_back(-n3);
+        norms.push_back(-n2);
+        norms.push_back(-n1);
         colors.push_back(negColor);
         colors.push_back(negColor);
         colors.push_back(negColor);
@@ -312,9 +322,9 @@ namespace TensorVis {
           verts.push_back(*p3);
           verts.push_back(*p4);
           verts.push_back(*p2);
-          norms.push_back(*n3);
-          norms.push_back(*n4);
-          norms.push_back(*n2);
+          norms.push_back(-n3);
+          norms.push_back(-n4);
+          norms.push_back(-n2);
           colors.push_back(negColor);
           colors.push_back(negColor);
           colors.push_back(negColor);
