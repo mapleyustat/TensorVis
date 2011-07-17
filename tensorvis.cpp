@@ -31,6 +31,10 @@
 
 #include <Eigen/Geometry>
 
+#include <float.h>
+
+#undef DEBUG_TENSORGEN
+
 using namespace Avogadro;
 
 namespace TensorVis {
@@ -99,11 +103,11 @@ namespace TensorVis {
     switch(this->m_dock->resolution())
     {
     case Poor:
-      THETA_STEP = PHI_STEP = 0.50;
+      THETA_STEP = PHI_STEP = 0.25;
       break;
     default:
     case Low:
-      THETA_STEP = PHI_STEP = 0.25;
+      THETA_STEP = PHI_STEP = 0.15;
       break;
     case Medium:
       THETA_STEP = PHI_STEP = 0.10;
@@ -118,10 +122,12 @@ namespace TensorVis {
 
     const float TENSOR_RADIUS = this->m_dock->scale();
 
+    // Theta runs [0,pi] (note that pi is included)
     const unsigned long NUM_THETA =
-      static_cast<unsigned long>(M_PI / THETA_STEP + 0.5) + 1;
+      static_cast<unsigned long>(M_PI / THETA_STEP) + 1;
+    // Phi runs [0,2*pi) (note that 2*pi is not included)
     const unsigned long NUM_PHI =
-      static_cast<unsigned long>(2*M_PI / PHI_STEP + 0.5) + 1;
+      static_cast<unsigned long>(2*M_PI / PHI_STEP);
     const unsigned long NUM_POINTS = NUM_THETA * NUM_PHI;
 
     // Set up caches
@@ -137,13 +143,14 @@ namespace TensorVis {
     QVector<float> tensorValue (NUM_POINTS);
 
     // Populate caches
-    /// @todo exploit symmetry?
-    const float thetaMax = M_PI + 0.5 * THETA_STEP;
+    // Subtract 1/2 step to drown out floating point noise
+    const float thetaMax = ((NUM_THETA - 0.5) * THETA_STEP);
     for (float theta = 0.0; theta < thetaMax; theta += THETA_STEP) {
       sinThetas.push_back(sin(theta));
       cosThetas.push_back(cos(theta));
     }
-    const float phiMax = 2.0 * M_PI + 0.5 * PHI_STEP;
+    // Subtract 1/2 step to drown out floating point noise
+    const float phiMax = ((NUM_PHI - 0.5) * PHI_STEP);
     for (float phi = 0.0; phi < phiMax; phi += PHI_STEP) {
       sinPhis.push_back(sin(phi));
       cosPhis.push_back(cos(phi));
@@ -151,13 +158,16 @@ namespace TensorVis {
 
     // ensure that the first and last entries of the lists are the
     // same (sin and cos can behave strangely on different
-    // implementations)
+    // implementations). Only do this for the theta values, as they
+    // include both endpoints.
     sinThetas.last() = sinThetas.first();
     cosThetas.last() = -cosThetas.first();
-    sinPhis.last() = sinPhis.first();
-    cosPhis.last() = cosPhis.first();
 
     // Check that all spherical coordinates were cached
+#ifdef DEBUG_TENSORGEN
+    printf("sinThetas: %u num: %u\n", sinThetas.size(), NUM_THETA);
+    printf("sinPhis:   %u num: %u\n", sinPhis.size(), NUM_PHI);
+#endif
     Q_ASSERT(sinPhis.size() == NUM_PHI);
     Q_ASSERT(sinThetas.size() == NUM_THETA);
 
@@ -213,12 +223,21 @@ namespace TensorVis {
     std::vector<Color3f> colors;
     // @todo reserve appropriate amount of space
 
+    // This vector is used to smooth out the normals of the surface. It
+    // stores an index to each normal added to norms. The outer vector is
+    // indexed by tensorPoints index, and the inner vectors contain all
+    // normals calculated at that point. After calculating the vertices and
+    // normals, the Eigen::Vectors in each inner vector of normalSmoother are
+    // averaged and set to the average. The improves the appearance of the
+    // final mesh.
+    std::vector<std::vector<size_t> > normalSmoother (NUM_POINTS);
+
     // Points:
     const Eigen::Vector3f *p1, *p2, *p3, *p4;
     // Normals:
-    Eigen::Vector3f n1, n2, n3, n4;
+    Eigen::Vector3f quadNormal;
     // Temp vecs used in normal calculations:
-    Eigen::Vector3f tv12, tv13, tv24, tv34;
+    Eigen::Vector3f tv13, tv14, tv23, tv24;
     // Values:
     const float *v1, *v2, *v3, *v4;
     // Indices:
@@ -230,7 +249,9 @@ namespace TensorVis {
     const unsigned long autoGenMeshLimit = NUM_POINTS - NUM_PHI - 1;
 
     // Build the mesh:
-    for (unsigned long ind = 0; ind < NUM_POINTS; ++ind) {
+    const unsigned long meshCalcStart = 0;
+    const unsigned long meshCalcEnd = NUM_POINTS - NUM_PHI;
+    for (unsigned long ind = meshCalcStart; ind < meshCalcEnd; ++ind) {
       // Initialize
       onlyRenderOneTriangle = false;
 
@@ -255,7 +276,6 @@ namespace TensorVis {
         // Skip the last few points since there's not enough data to
         // draw the quad.
         if (ind >= NUM_POINTS - 4) break;
-        i2 = NUM_POINTS-1;
         // i4 will not be used -- set to a safe index
         i4 = 0;
       }
@@ -266,15 +286,47 @@ namespace TensorVis {
       p3 = &tensorPoints[i3];
       p4 = &tensorPoints[i4];
 
-      // Assign normals
-      tv12 = *p1 - *p2;
+#ifdef DEBUG_TENSORGEN
+      printf("\nNew quad:\n");
+      printf("  %9.5f %9.5f %9.5f\n", p1->x(), p1->y(), p1->z());
+      printf("  %9.5f %9.5f %9.5f\n", p2->x(), p2->y(), p2->z());
+      printf("  %9.5f %9.5f %9.5f\n", p3->x(), p3->y(), p3->z());
+      printf("  %9.5f %9.5f %9.5f\n", p4->x(), p4->y(), p4->z());
+#endif
+
+      // Assign normals.
       tv13 = *p1 - *p3;
+      tv14 = *p1 - *p4;
+      tv23 = *p2 - *p3;
       tv24 = *p2 - *p4;
-      tv34 = *p3 - *p4;
-      n1 = tv13.cross(tv12).normalized();
-      n2 = tv24.cross(tv12).normalized();
-      n3 = tv13.cross(tv34).normalized();
-      n4 = tv24.cross(tv34).normalized();
+      bool isZero13 = tv13.isZero(1e-5);
+      bool isZero14 = tv14.isZero(1e-5);
+      bool isZero23 = tv23.isZero(1e-5);
+      bool isZero24 = tv24.isZero(1e-5);
+      // Normalizations are performed in the later smoothing step. Note that
+      // we only include p4 if !onlyRenderOneTriangle
+      quadNormal << 0.0, 0.0, 0.0;
+      if (!onlyRenderOneTriangle) {
+        if (!isZero14 && !isZero13)
+          quadNormal += tv14.cross(tv13);
+        if (!isZero24 && !isZero23)
+          quadNormal += tv24.cross(tv23);
+        if (!isZero13 && !isZero23)
+          quadNormal += tv13.cross(tv23);
+        if (!isZero14 && !isZero24)
+          quadNormal += tv14.cross(tv24);
+      }
+      else {
+        if (!isZero13 && !isZero23)
+          quadNormal += tv13.cross(tv23);
+      }
+      if (quadNormal.isZero(1e-5))
+        quadNormal = *p1 - tensorOrigin; // All points are the same. Approx.
+
+#ifdef DEBUG_TENSORGEN
+      printf("\nQuadNormal: %9.5f %9.5f %9.5f\n",
+             quadNormal.x(), quadNormal.y(), quadNormal.z());
+#endif
 
       // Assign values
       v1 = &tensorValue[i1];
@@ -287,10 +339,12 @@ namespace TensorVis {
         verts.push_back(*p1);
         verts.push_back(*p2);
         verts.push_back(*p3);
-        norms.push_back(n1);
-        norms.push_back(n2);
-        norms.push_back(n3);
-        /// @todo Scale colors?
+        norms.push_back(quadNormal);
+        normalSmoother[i1].push_back(norms.size() - 1);
+        norms.push_back(quadNormal);
+        normalSmoother[i2].push_back(norms.size() - 1);
+        norms.push_back(quadNormal);
+        normalSmoother[i3].push_back(norms.size() - 1);
         colors.push_back(posColor);
         colors.push_back(posColor);
         colors.push_back(posColor);
@@ -299,9 +353,12 @@ namespace TensorVis {
           verts.push_back(*p2);
           verts.push_back(*p4);
           verts.push_back(*p3);
-          norms.push_back(n2);
-          norms.push_back(n4);
-          norms.push_back(n3);
+          norms.push_back(quadNormal);
+          normalSmoother[i2].push_back(norms.size() - 1);
+          norms.push_back(quadNormal);
+          normalSmoother[i4].push_back(norms.size() - 1);
+          norms.push_back(quadNormal);
+          normalSmoother[i3].push_back(norms.size() - 1);
           colors.push_back(posColor);
           colors.push_back(posColor);
           colors.push_back(posColor);
@@ -311,9 +368,12 @@ namespace TensorVis {
         verts.push_back(*p3);
         verts.push_back(*p2);
         verts.push_back(*p1);
-        norms.push_back(-n3);
-        norms.push_back(-n2);
-        norms.push_back(-n1);
+        norms.push_back(-quadNormal);
+        normalSmoother[i3].push_back(norms.size() - 1);
+        norms.push_back(-quadNormal);
+        normalSmoother[i2].push_back(norms.size() - 1);
+        norms.push_back(-quadNormal);
+        normalSmoother[i1].push_back(norms.size() - 1);
         colors.push_back(negColor);
         colors.push_back(negColor);
         colors.push_back(negColor);
@@ -322,13 +382,48 @@ namespace TensorVis {
           verts.push_back(*p3);
           verts.push_back(*p4);
           verts.push_back(*p2);
-          norms.push_back(-n3);
-          norms.push_back(-n4);
-          norms.push_back(-n2);
+          norms.push_back(-quadNormal);
+          normalSmoother[i3].push_back(norms.size() - 1);
+          norms.push_back(-quadNormal);
+          normalSmoother[i4].push_back(norms.size() - 1);
+          norms.push_back(-quadNormal);
+          normalSmoother[i2].push_back(norms.size() - 1);
           colors.push_back(negColor);
           colors.push_back(negColor);
           colors.push_back(negColor);
         }
+      }
+    }
+
+    // Smooth out the normals:
+    for (std::vector<std::vector<size_t> >::const_iterator
+         it_out = normalSmoother.begin(), it_out_end = normalSmoother.end();
+         it_out != it_out_end; ++it_out) {
+      tmpVec << 0.0,0.0,0.0;
+#ifdef DEBUG_TENSORGEN
+      printf("\nNew set of vectors to smooth!\n");
+#endif
+      // Calculate average. Note that we don't keep track of how many vectors
+      // are being averaged (i.e. the denominator in the mean calculation).
+      // Since we are normalizing the averaged vector anyway, the division
+      // would be a waste of cycles.
+      for (std::vector<size_t>::const_iterator it = it_out->begin(),
+           it_end = it_out->end(); it != it_end; ++it) {
+        tmpVec += norms[*it];
+#ifdef DEBUG_TENSORGEN
+        printf("  Vector #%5d: %9.5f %9.5f %9.5f\n", *it,
+               norms[*it].x(), norms[*it].y(), norms[*it].z());
+#endif
+      }
+      tmpVec.normalize();
+#ifdef DEBUG_TENSORGEN
+      printf("  Average:   %9.5f %9.5f %9.5f Length: %9.5f\n",
+             tmpVec.x(), tmpVec.y(), tmpVec.z(), tmpVec.norm());
+#endif
+      // Reset the vectors
+      for (std::vector<size_t>::const_iterator it = it_out->begin(),
+           it_end = it_out->end(); it != it_end; ++it) {
+        norms[*it] = tmpVec;
       }
     }
 
@@ -353,8 +448,6 @@ namespace TensorVis {
     mesh->setVertices(verts);
     mesh->setNormals(norms);
     mesh->setColors(colors);
-    /// @todo Ask Jochen if there is an easier way for users to
-    /// identify the tensors.
     mesh->setName(tr("Tensor at (%L1, %L2, %L3), trace average = %L4")
                   .arg(tensorOrigin.x(), 1, 'f')
                   .arg(tensorOrigin.y(), 1, 'f')
